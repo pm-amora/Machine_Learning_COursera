@@ -1,0 +1,185 @@
+---
+title: "HAR Course Project"
+author: "Pedro Medeiros"
+date: "2024-12-18"
+output: html_document
+---
+
+## Executive Summary
+
+This report is a course project within the Practical Machine Learning course on the Data Science Specialization by Johns Hopkins University on Coursera. In this project, we will use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to predict the manner in which they did the exercise. This is the “classe” variable in the training set. We train 4 models: Decision Tree, Random Forest, Gradient Boosted Trees, Support Vector Machine using k-folds cross validation on the training set. We then predict using a validation set randomly selected from the training csv data to obtain the accuracy and out of sample error rate. Based on those numbers, we decide on the best model, and use it to predict 20 cases using the test csv set.
+
+## Data Description
+
+The dataset for the project is derived from the Human Activity Recognition Using Wearable Sensors Dataset. It includes measurements from sensors placed on various body parts during specific physical activities. Here's a breakdown:
+
+  Training Dataset (pml-training.csv):
+   - Contains labeled observations for training the machine learning model.
+   - Includes 19,622 rows and 160 features.
+   - Features include sensor measurements, timestamps, and metadata. Many features contain NA values.
+        
+  The target variable, classe, represents the activity type and has five levels:
+            A: Correct execution.
+            B, C, D, E: Represent common mistakes in form or movement.
+
+  Testing Dataset (pml-testing.csv):
+        Contains 20 unlabeled observations for final model evaluation.
+        Students use the trained model to predict the classe for these observations.
+        
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har.
+
+## Exploratory Analysis
+
+Loading all the libraries and the data:
+
+```{r, echo=FALSE}
+library(lattice)
+library(ggplot2)
+library(caret)
+library(kernlab)
+library(rattle)
+library(corrplot)
+set.seed(1234)
+pml_train <- read.csv("pml-training.csv")
+pml_test <- read.csv("pml-testing.csv")
+dim(pml_train)
+dim(pml_test)
+cat("Dimensions of Training Data:", dim(pml_train), "\n")
+cat("Dimensions of Test Data:", dim(pml_test), "\n")
+```
+
+We see that there are 160 variables and 19622 observations in the training set, while 20 for the test set.
+
+## Cleaning Data 
+
+We need to clean the data because many NA values may be present. (by using str function we can see there are)
+
+```{r, echo=FALSE}
+pml_train <- pml_train[ , -c(1:7)][ , colMeans(is.na(pml_train[ , -c(1:7)])) < 0.9 ] #Remove the first 7 columns (irrelevant to prediction) and columns with >= 90% missing values
+```
+Removing near zero variance variables.
+```{r, echo=FALSE}
+nvz <- nearZeroVar(pml_train)
+pml_train <- pml_train[,-nvz]
+dim(pml_train)
+cat("Dimensions after cleaning:", dim(pml_train), "\n")
+```
+Now that we have finished removing the unnecessary variables, we can now split the training set into a validation and sub training set. The testing set “pml_test” will be left alone, and used for the final quiz test cases.
+
+```{r, echo=FALSE}
+inTrain <- createDataPartition(y=pml_train$classe, p=0.7, list=F)
+train <- pml_train[inTrain,]
+valid <- pml_train[-inTrain,]
+```
+
+## Cross Validation
+
+Time to test the models including: Decision Trees, Random Forest, Gradient Boosted Trees, and SVM. Set up control for training to use 3-fold cross validation.
+
+```{r, echo=FALSE}
+control <- trainControl(method="cv", number=3, verboseIter=F)
+```
+
+# Decision Tree
+
+```{r, echo=FALSE}
+mod_trees <- train(classe ~ ., train, method = "rpart", trControl = control, tuneLength = 5)
+fancyRpartPlot(mod_trees$finalModel)
+pred_dt <- predict(mod_trees, valid)
+cmdt <- confusionMatrix(pred_dt, factor(valid$classe))
+cmdt
+cat("Decision Tree Accuracy:", cmdt$overall["Accuracy"], "\n")
+```
+
+# Random Forest
+
+```{r, echo=FALSE}
+mod_rforest <- train(classe ~ ., train, method = "rf", trControl = control, tuneLength = 5)
+pred_rf <- predict(mod_rforest, valid)
+cmrf <- confusionMatrix(pred_rf, factor(valid$classe))
+cmrf
+cat("Random Forest Accuracy:", cmrf$overall["Accuracy"], "\n")
+```
+
+# Gradient Boosted Trees
+
+```{r, echo=FALSE}
+mod_gbt <- train(classe ~ ., train, method = "gbm", trControl = control, tuneLength = 5, verbose = F)
+pred_gbt <- predict(mod_gbt, valid)
+cmgbt <- confusionMatrix(pred_gbt, factor(valid$classe))
+cmgbt
+cat("Gradient Boosted Trees Accuracy:", cmgbt$overall["Accuracy"], "\n")
+```
+
+# Support Vector Machine
+
+```{r, echo=FALSE}
+mod_svm <- train(classe ~ ., train, method = "svmLinear", trControl = control, tuneLength = 5, verbose = F)
+pred_svm <- predict(mod_svm, valid)
+cmsvm <- confusionMatrix(pred_svm, factor(valid$classe))
+cmsvm
+cat("SVM Accuracy:", cmsvm$overall["Accuracy"], "\n")
+```
+
+## Results (Accuracy & Out of Sample Error)
+
+```{r, echo=FALSE}
+# Initialize results storage
+results <- data.frame(
+  Model = c("Tree", "RF", "GBM", "SVM"),
+  Accuracy = c(
+    cmdt$overall["Accuracy"],
+    cmrf$overall["Accuracy"],
+    cmgbt$overall["Accuracy"],
+    cmsvm$overall["Accuracy"]
+  ),
+  OOS_Error = 1 - c(
+    cmdt$overall["Accuracy"],
+    cmrf$overall["Accuracy"],
+    cmgbt$overall["Accuracy"],
+    cmsvm$overall["Accuracy"]
+  )
+)
+print(results)
+```
+
+Random Forest is the best-performing model in this comparison, with near-perfect accuracy (~99,58%) and minimal error (~0,4%). We find that to be a sufficient enough model to use for our test sets. 
+
+## Predictions on Test Set
+
+Running our test set to predict the classe (5 levels) outcome for 20 cases with the Random Forest model.
+
+```{r, echo=FALSE}
+pred <- predict(mod_rforest, pml_test)
+print(pred)
+```
+
+## Appendix
+
+GitHub repo: https://github.com/pm-amora/Machine_Learning_COursera
+
+Correlation Matrix of variables in training set:
+```{r, echo=FALSE}
+corrPlot <- cor(train[, -length(names(train))])
+corrplot(corrPlot, method="color")
+```
+
+Plotting the models:
+```{r, echo=FALSE}
+plot(mod_trees)
+plot(mod_rforest)
+plot(mod_gbt)
+```
+
+## References 
+
+Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; Fuks, H. Wearable Computing: Accelerometers' Data Classification of Body Postures and Movements. Proceedings of 21st Brazilian Symposium on Artificial Intelligence. Advances in Artificial Intelligence - SBIA 2012. In: Lecture Notes in Computer Science. , pp. 52-61. Curitiba, PR: Springer Berlin / Heidelberg, 2012. ISBN 978-3-642-34458-9. DOI: 10.1007/978-3-642-34459-6_6.
+
